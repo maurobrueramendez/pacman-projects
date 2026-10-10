@@ -133,19 +133,117 @@ def depth_first_search(problem):
     print("Start's successors:", problem.get_successors(problem.get_start_state()))
     """
     "*** YOUR CODE HERE ***"
-    util.raise_not_defined()
+    # DFS explores first path in the stack till the end and if the is_goal_state is false, 
+    # it backtracks and explores the next path in the stack and so on until the goal is found or the stack is empty.
+    # The "frontier" holds nodes accessible but not visited yet, using a Stack which exactly implements the DFS logic (Last in, first out). 
+    frontier = util.Stack()
+    frontier.push(SearchNode(None, (problem.get_start_state(), None, 0)))
 
+    # Save which states were already visited in order to avoid loops in mazes with cycles.
+    visited = set()
+
+    # The main loop to explore the all possible paths.
+    while not frontier.is_empty():
+        # Takes the last node in the stack (most recently pushed).
+        current_node = frontier.pop()
+
+        # Test when the node is popped (not when pushed), if it actually is return the reconstructed path.
+        if problem.is_goal_state(current_node.state):
+            return current_node.get_path()
+
+        # As the same state can sit in the stack several times (pushed from
+        # different paths before it was visited). Only the first pop counts 
+        # and later copies are skipped.
+        if current_node.state in visited:
+            continue
+        
+        visited.add(current_node.state)
+
+        # gets every next step (next_state, action, step_cost) reachable in one move 
+        # and pushes the ones not visited yet.
+        for successor, action, cost in problem.get_successors(current_node.state):
+            if successor not in visited:
+                frontier.push(SearchNode(current_node, (successor, action, cost)))
+
+    # In case the goal is unreachable
+    return []   
 
 
 def breadth_first_search(problem):
     """Search the shallowest nodes in the search tree first."""
     "*** YOUR CODE HERE ***"
-    util.raise_not_defined()
+    # BFS explores the paths level by level: first all states 1 move away, then all states 2 moves away
+    # and so on, until the goal is found or the queue is empty.
+    # The "frontier" (same as in DFS) holds nodes accessible but not visited yet,
+    # but now using a Queue which implements the BFS logic (First in, first out).
+    frontier = util.Queue()
+    frontier.push(SearchNode(None, (problem.get_start_state(), None, 0)))
+
+    # Save which states were already visited in order to avoid loops in mazes with cycles.
+    visited = set()
+
+    # The main loop to explore the all possible paths.
+    while not frontier.is_empty():
+        # Takes the first node in the queue (oldest pushed to the queue).
+        current_node = frontier.pop()
+
+        # Test the same way as in DFS, if goal is reached return the reconstructed path.
+        if problem.is_goal_state(current_node.state):
+            return current_node.get_path()
+
+        # As the same state can sit in the queue several times too
+        # we consider it only the first time it is visited.
+        if current_node.state in visited:
+            continue
+
+        visited.add(current_node.state)
+
+        # get every next step reachable in one move
+        # and pusht the ones not visited yet to the back of the queue.
+        for successor, action, cost in problem.get_successors(current_node.state):
+            if successor not in visited:
+                frontier.push(SearchNode(current_node, (successor, action, cost)))
+
+    # In case the goal is unreachable
+    return []
 
 def uniform_cost_search(problem):
     """Search the node of least total cost first."""
     "*** YOUR CODE HERE ***"
-    util.raise_not_defined()
+    # UCS always explores the cheapest path found so far (lowest total cost from the start),
+    # until the goal is found or the queue is empty.
+    # The "frontier" (same as in previous implementations) holds nodes accessible but not visited yet,
+    # but now using a PriorityQueue which implements the UCS logic (lowest cost, first out).
+    frontier = util.PriorityQueue()
+    frontier.push(SearchNode(None, (problem.get_start_state(), None, 0)), 0)
+
+    # Save which states were already visited in order to avoid loops in mazes with cycles.
+    visited = set()
+
+    # The main loop to explore the all possible paths.
+    while not frontier.is_empty():
+        # Takes the node with the lowest total cost in the queue.
+        current_node = frontier.pop()
+
+        # If goal is reached return the reconstructed path.
+        if problem.is_goal_state(current_node.state):
+            return current_node.get_path()
+
+        # Consider it the path only the first time it is visited (the cheapest one).
+        if current_node.state in visited:
+            continue
+
+        visited.add(current_node.state)
+
+        # get every next step reachable in one move
+        # and push the ones not visited yet, with their total cost from the start as priority.
+        for successor, action, cost in problem.get_successors(current_node.state):
+            if successor not in visited:
+                child = SearchNode(current_node, (successor, action, cost))
+                frontier.push(child, child.cost)
+
+    # In case the goal is unreachable
+    return []
 
 def null_heuristic(state, problem=None):
     """
@@ -157,7 +255,40 @@ def null_heuristic(state, problem=None):
 def a_star_search(problem, heuristic=null_heuristic):
     """Search the node that has the lowest combined cost and heuristic first."""
     "*** YOUR CODE HERE ***"
-    util.raise_not_defined()
+    # A* explores first the path with the lowest total cost so far plus the heuristic's estimate
+    # of the remaining cost to the goal, until the goal is found or the queue is empty.
+    # The "frontier" (same as in UCS) is a PriorityQueue, but now the priority is
+    # total cost + heuristic (with null_heuristic it behaves exactly like UCS).
+    frontier = util.PriorityQueue()
+    frontier.push(SearchNode(None, (problem.get_start_state(), None, 0)), 0)
+
+    # Save which states were already visited in order to avoid loops in mazes with cycles.
+    visited = set()
+
+    # The main loop to explore the all possible paths.
+    while not frontier.is_empty():
+        # Takes the node with the lowest total cost + heuristic in the queue.
+        current_node = frontier.pop()
+
+        # If goal is reached return the reconstructed path.
+        if problem.is_goal_state(current_node.state):
+            return current_node.get_path()
+
+        # Consider it the path only the first time it is visited.
+        if current_node.state in visited:
+            continue
+
+        visited.add(current_node.state)
+
+        # get every next step reachable in one move
+        # and push the ones not visited yet, with their total cost from the start plus the heuristic as priority.
+        for successor, action, cost in problem.get_successors(current_node.state):
+            if successor not in visited:
+                child = SearchNode(current_node, (successor, action, cost))
+                frontier.push(child, child.cost + heuristic(successor, problem))
+
+    # In case the goal is unreachable
+    return []
 
 # Abbreviations
 bfs = breadth_first_search
