@@ -532,7 +532,69 @@ def food_heuristic(state, problem):
     """
     position, food_grid = state
     "*** YOUR CODE HERE ***"
-    return 0
+    food = tuple(food_grid.as_list())
+    if not food:
+        return 0
+
+    # Cache exact maze distances because the wall layout is fixed for the
+    # lifetime of this problem and A* asks about the same point pairs often.
+    distance_cache = problem.heuristic_info.setdefault('mazeDistances', {})
+
+    def maze_distance_cached(point1, point2):
+        if point1 == point2:
+            return 0
+
+        key = tuple(sorted((point1, point2)))
+        if key in distance_cache:
+            return distance_cache[key]
+
+        frontier = util.Queue()
+        frontier.push((point1, 0))
+        visited = {point1}
+
+        while not frontier.is_empty():
+            current, distance = frontier.pop()
+            x, y = current
+            for dx, dy in ((0, 1), (0, -1), (1, 0), (-1, 0)):
+                successor = (x + dx, y + dy)
+                if problem.walls[successor[0]][successor[1]] or successor in visited:
+                    continue
+                if successor == point2:
+                    distance_cache[key] = distance + 1
+                    return distance + 1
+                visited.add(successor)
+                frontier.push((successor, distance + 1))
+
+        # Valid FoodSearchProblem states have mutually reachable open squares.
+        # Keeping infinity here also makes a malformed disconnected problem
+        # explicit instead of silently inventing a finite distance.
+        return float('inf')
+
+    # Every solution must first reach some remaining pellet.
+    distance_to_food = min(maze_distance_cached(position, dot) for dot in food)
+
+    # It must also connect all remaining pellets.  The weight of a minimum
+    # spanning tree over them is therefore a lower bound on that part of any
+    # completion route.  Cache it by the immutable set of remaining food.
+    tree_cache = problem.heuristic_info.setdefault('foodMstCosts', {})
+    if food not in tree_cache:
+        connected = {food[0]}
+        unconnected = set(food[1:])
+        tree_cost = 0
+
+        while unconnected:
+            edge_cost, next_dot = min(
+                (maze_distance_cached(source, target), target)
+                for source in connected
+                for target in unconnected
+            )
+            tree_cost += edge_cost
+            connected.add(next_dot)
+            unconnected.remove(next_dot)
+
+        tree_cache[food] = tree_cost
+
+    return distance_to_food + tree_cache[food]
 
 
 def simplified_corners_heuristic(state, problem):
