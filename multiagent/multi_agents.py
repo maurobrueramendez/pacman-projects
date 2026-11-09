@@ -40,6 +40,8 @@ class ReflexAgent(Agent):
         """
         # Collect legal moves and successor states
         legal_moves = game_state.get_legal_actions()
+        if not legal_moves:
+            return Directions.STOP
 
         # Choose one of the best actions
         scores = [self.evaluation_function(game_state, action) for action in legal_moves]
@@ -68,13 +70,15 @@ class ReflexAgent(Agent):
         """
         # Useful information you can extract from a GameState (pacman.py)
         successor_game_state = current_game_state.generate_pacman_successor(action)
-        new_pos = successor_game_state.get_pacman_position()
-        new_food = successor_game_state.get_food()
-        new_ghost_states = successor_game_state.get_ghost_states()
-        new_scared_times = [ghostState.scared_timer for ghostState in new_ghost_states]
         
-        "*** YOUR CODE HERE ***"
-        return successor_game_state.get_score()
+        # Evaluates the successor state
+        value = better_evaluation_function(successor_game_state)
+
+        # Penalty for standing still
+        if action == Directions.STOP:
+            value -= 20
+
+        return value
 
 def score_evaluation_function(current_game_state):
     """
@@ -107,6 +111,114 @@ class MultiAgentSearchAgent(Agent):
         self.evaluation_function = util.lookup(eval_fn, globals())
         self.depth = int(depth) 
 
+    # As all of the search agents are practically the same, we have generalized the code for practicality
+    def _search_action(self, game_state, ghost_mode, use_pruning=False):
+        """
+        Return the best action using the requested adversarial search mode.
+        
+        The main logic we followed is:
+        ghost_mode="minimum": ghosts minimize Pacman’s score.
+        ghost_mode="average": ghost moves are averaged.
+        use_pruning=True: enables alpha-beta pruning
+        """
+        num_agents = game_state.get_num_agents()
+
+        # Recursive evaluation 
+        def value(state, agent_index, depth, alpha, beta):
+            
+            # Base case: depth limit reached or game won/lost
+            if depth >= self.depth or state.is_win() or state.is_lose():
+                return self.evaluation_function(state)
+            
+            # Gets legal actions for the current agent
+            legal_actions = state.get_legal_actions(agent_index)
+            if not legal_actions:
+                return self.evaluation_function(state)
+
+            # Updates the agent's state for the next turn
+            next_agent = (agent_index + 1) % num_agents
+            next_depth = depth + 1 if next_agent == self.index else depth
+
+            # Maximizes score
+            if agent_index == self.index:
+                result = float("-inf")
+                
+                # Maximizes score by iterating through all legal actions
+                for action in legal_actions:
+                    # Generates the successor state
+                    successor = state.generate_successor(agent_index, action)
+                    
+                    # Updates the result
+                    result = max(
+                        result,
+                        value(successor, next_agent, next_depth, alpha, beta),
+                    )
+                    
+                    # If the result is greater than beta, return the result
+                    if use_pruning and result > beta:
+                        return result
+                    # Otherwise, update the alpha
+                    alpha = max(alpha, result)
+                    
+                return result
+            
+            # Minimizes score
+            if ghost_mode == "minimum":
+                result = float("inf")
+                
+                # Minimizes score by iterating through all legal actions 
+                for action in legal_actions:
+                    successor = state.generate_successor(agent_index, action)
+                    result = min(
+                        result,
+                        value(successor, next_agent, next_depth, alpha, beta),
+                    )
+                    if use_pruning and result < alpha:
+                        return result
+                    beta = min(beta, result)
+                return result
+
+            # Expectimax treats each ghost action as equally likely
+            # Calculates the expected value of the successor states
+            successor_values = [
+                # Updates the state
+                value(
+                    state.generate_successor(agent_index, action),
+                    next_agent,
+                    next_depth,
+                    alpha,
+                    beta,
+                )
+                for action in legal_actions
+            ]
+            
+            # The average of the successor values
+            return sum(successor_values) / len(successor_values)
+
+        # Handle illegal actions
+        legal_actions = game_state.get_legal_actions(self.index)
+        if not legal_actions:
+            return Directions.STOP
+        
+        next_agent = (self.index + 1) % num_agents
+        next_depth = 1 if next_agent == self.index else 0
+        
+        # Initializes the alpha-beta values
+        alpha, beta = float("-inf"), float("inf")
+        best_action = legal_actions[0]
+        best_value = float("-inf")
+
+        # Finds the best action at the current state
+        for action in legal_actions:
+            successor = game_state.generate_successor(self.index, action)
+            action_value = value(successor, next_agent, next_depth, alpha, beta)
+            if action_value > best_value:
+                best_value = action_value
+                best_action = action
+            alpha = max(alpha, best_value)
+
+        return best_action
+
 class MinimaxAgent(MultiAgentSearchAgent):
     """
     Your minimax agent (question 2)
@@ -135,8 +247,7 @@ class MinimaxAgent(MultiAgentSearchAgent):
         game_state.is_lose():
         Returns whether or not the game state is a losing state
         """
-        "*** YOUR CODE HERE ***"
-        util.raise_not_defined()
+        return self._search_action(game_state, ghost_mode="minimum")
     
 
 class AlphaBetaAgent(MultiAgentSearchAgent):
@@ -148,8 +259,7 @@ class AlphaBetaAgent(MultiAgentSearchAgent):
         """
         Returns the minimax action using self.depth and self.evaluation_function
         """
-        "*** YOUR CODE HERE ***"
-        util.raise_not_defined()
+        return self._search_action(game_state, "minimum", use_pruning=True)
 
 
 class ExpectimaxAgent(MultiAgentSearchAgent):
@@ -164,20 +274,66 @@ class ExpectimaxAgent(MultiAgentSearchAgent):
         All ghosts should be modeled as choosing uniformly at random from their
         legal moves.
         """
-        "*** YOUR CODE HERE ***"
-        util.raise_not_defined()
+        return self._search_action(game_state, ghost_mode="average")
 
 def better_evaluation_function(current_game_state):
     """
     Your extreme ghost-hunting, pellet-nabbing, food-gobbling, unstoppable
     evaluation function (question 5).
 
-    DESCRIPTION: <write something here so we know what you did>
+    Combines the game score with food, capsule, and ghost proximity. Active
+    ghosts are treated as threats, while reachable scared ghosts are targets.
     """
-    "*** YOUR CODE HERE ***"
-    util.raise_not_defined()
-    
+    # Sets the winning as the most desired outcome
+    if current_game_state.is_win():
+        return 1_000_000 + current_game_state.get_score()
+    if current_game_state.is_lose():
+        return -1_000_000 + current_game_state.get_score()
 
+    pacman_position = current_game_state.get_pacman_position()
+    food_positions = current_game_state.get_food().as_list()
+    capsules = current_game_state.get_capsules()
+    ghost_states = current_game_state.get_ghost_states()
+
+    value = current_game_state.get_score()
+
+    # Penalizes the number of moves to reach food
+    value -= 4 * len(food_positions)
+    
+    # Reward the nearest food
+    if food_positions:
+        nearest_food = min(
+            manhattan_distance(pacman_position, food) for food in food_positions
+        )
+        value += 10 / (nearest_food + 1)
+
+    value -= 15 * len(capsules)
+    if capsules:
+        nearest_capsule = min(
+            manhattan_distance(pacman_position, capsule) for capsule in capsules
+        )
+        value += 10 / (nearest_capsule + 1)
+
+    # Rewards the nearest capsule
+    for ghost_state in ghost_states:
+        ghost_distance = manhattan_distance(
+            pacman_position, ghost_state.get_position()
+        )
+        if ghost_state.scared_timer > 0:
+            # Only chase ghosts that can be reached before they recover.
+            if ghost_distance <= ghost_state.scared_timer:
+                value += 100 / (ghost_distance + 1)
+        elif ghost_distance == 0:
+            return -1_000_000
+        elif ghost_distance == 1:
+            value -= 200
+        elif ghost_distance == 2:
+            value -= 75
+        else:
+            value -= 20 / ghost_distance
+
+    return value
+    
 
 # Abbreviation
 better = better_evaluation_function
