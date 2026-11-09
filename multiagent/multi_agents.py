@@ -40,6 +40,8 @@ class ReflexAgent(Agent):
         """
         # Collect legal moves and successor states
         legal_moves = game_state.get_legal_actions()
+        if not legal_moves:
+            return Directions.STOP
 
         # Choose one of the best actions
         scores = [self.evaluation_function(game_state, action) for action in legal_moves]
